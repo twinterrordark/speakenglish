@@ -7,6 +7,8 @@
     "not_found_handling": "none",
     "run_worker_first": ["/api/*"]
   },
+  // Doğal ses (MeloTTS) için Workers AI; ücretsiz planda günlük 10.000 nöron.
+  "ai": { "binding": "AI" },
   "vars": {
     // Ücretsiz katmandaki başka bir modele geçmek için değiştirin (ör. "gemini-3.8-flash").
     // Model "minimal" desteklemiyorsa GEMINI_THINKING_LEVEL değerini "low" yapın.

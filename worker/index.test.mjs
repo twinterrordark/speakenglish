@@ -74,6 +74,40 @@ test("Gemini 429 → rate_limited", async () => {
   assert.equal((await res.json()).error, "rate_limited");
 });
 
+const ttsPost = (body) =>
+  new Request("http://x/api/tts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+test("TTS base64 cevabı MP3 olarak döner", async () => {
+  let args;
+  const env = { AI: { run: async (model, input) => ((args = { model, input }), { audio: btoa("ID3fake") }) } };
+  const res = await worker.fetch(ttsPost({ text: "Hello there!" }), env);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("content-type"), "audio/mpeg");
+  assert.equal(new TextDecoder().decode(await res.arrayBuffer()), "ID3fake");
+  const wavEnv = { AI: { run: async () => ({ audio: btoa("RIFFxxxxWAVE") }) } };
+  const wav = await worker.fetch(ttsPost({ text: "Hi" }), wavEnv);
+  assert.equal(wav.headers.get("content-type"), "audio/wav");
+  assert.equal(args.model, "@cf/myshell-ai/melotts");
+  assert.deepEqual(args.input, { prompt: "Hello there!", lang: "en" });
+});
+
+test("TTS geçici hatada yeniden dener", async () => {
+  let calls = 0;
+  const env = { AI: { run: async () => { if (++calls < 3) throw new Error("3043"); return { audio: btoa("ID3") }; } } };
+  const res = await worker.fetch(ttsPost({ text: "Hi" }), env);
+  assert.equal(res.status, 200);
+  assert.equal(calls, 3);
+});
+
+test("TTS hata/kota durumunda tts_unavailable", async () => {
+  const env = { AI: { run: async () => { throw new Error("quota"); } } };
+  const res = await worker.fetch(ttsPost({ text: "Hi" }), env);
+  assert.equal(res.status, 503);
+  assert.equal((await res.json()).error, "tts_unavailable");
+  const empty = await worker.fetch(ttsPost({ text: "" }), env);
+  assert.equal(empty.status, 400);
+});
+
 test("CORS sadece izinli siteye açılır", async () => {
   const env = { ALLOWED_ORIGINS: "https://a.github.io" };
   const pre = new Request("http://x/api/chat", { method: "OPTIONS", headers: { origin: "https://a.github.io" } });

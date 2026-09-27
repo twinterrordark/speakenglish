@@ -1,5 +1,7 @@
 /** Ders durumu: senaryo, seviye ve konuşma geçmişi. Sunucuya /api/chat ile konuşur. */
 
+import { apiUrl } from "./api.js";
+
 export const SCENARIOS = {
   free: { label: "Serbest sohbet", title: "Let's chat!" },
   restaurant: { label: "Restoranda", title: "At the Restaurant" },
@@ -8,9 +10,6 @@ export const SCENARIOS = {
 };
 
 export const LEVELS = ["A2", "B1", "B2"];
-
-// Site ve sunucu farklı yerlerdeyse (ör. GitHub Pages + Cloudflare) sunucu adresi derlemede verilir.
-const API_URL = `${(import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "")}/api/chat`;
 
 const ERRORS = {
   no_server: "Sohbet sunucusu bulunamadı. Cloudflare Worker adresi (API_URL) ayarlanmamış.",
@@ -43,7 +42,7 @@ export class Lesson {
 
     let res;
     try {
-      res = await fetch(API_URL, {
+      res = await fetch(apiUrl("/api/chat"), {
         method: "POST",
         headers,
         body: JSON.stringify({ scenario: this.scenario, level: this.level, history: this.history, message }),

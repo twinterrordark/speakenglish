@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { createScene } from "./scene.js";
 import { loadTeacher } from "./teacher.js";
-import { speak, speechSupported, stopSpeaking, unlockSpeech, watchEnglishVoices } from "./speech.js";
+import { speechSupported, watchEnglishVoices } from "./speech.js";
+import { say, stopVoice, unlockVoices } from "./voice.js";
 import { listen, listenSupported } from "./listen.js";
 import { Lesson, LEVELS, SCENARIOS } from "./lesson.js";
 
@@ -10,11 +11,12 @@ const touchDevice = window.matchMedia("(pointer: coarse)").matches;
 
 const $ = (id) => document.getElementById(id);
 const stage = createScene($("stage"));
-const clock = new THREE.Clock();
+const timer = new THREE.Timer();
 let teacher = null;
 
-stage.renderer.setAnimationLoop(() => {
-  const dt = Math.min(clock.getDelta(), 0.1);
+stage.renderer.setAnimationLoop((time) => {
+  timer.update(time);
+  const dt = Math.min(timer.getDelta(), 0.1);
   teacher?.update(dt);
   stage.controls.update();
   stage.renderer.render(stage.scene, stage.camera);
@@ -48,21 +50,24 @@ for (const level of LEVELS) $("level").append(new Option(level, level));
 $("user-key").value = storage("get");
 $("user-key").addEventListener("change", (e) => storage("set", e.target.value.trim()));
 
+// Ses seçimi: "natural" = sunucudaki doğal ses; sayılar tarayıcının İngilizce sesleri.
+// Doğal ses kullanılamazsa fallbackVoice ile tarayıcı sesine geçilir.
 let voices = [];
+let fallbackVoice;
 watchEnglishVoices((list) => {
   const select = $("voice");
-  const previous = voices[Number(select.value)]?.name;
+  const previous = select.value === "natural" ? "natural" : voices[Number(select.value)]?.name;
   voices = list;
-  select.replaceChildren();
-  if (!list.length) {
-    select.append(new Option(speechSupported ? "Varsayılan" : "Desteklenmiyor", ""));
-    return;
-  }
+  select.replaceChildren(new Option("🌟 Doğal ses (Ms. Emma)", "natural"));
   list.forEach((v, i) => select.append(new Option(`${v.name} (${v.lang})`, String(i))));
-  let index = list.findIndex((v) => v.name === previous);
-  if (index < 0) index = list.findIndex((v) => /en.US/i.test(v.lang) && /female|zira|aria|jenny|samantha|google us/i.test(v.name));
+  if (!list.length && !speechSupported) select.append(new Option("Tarayıcı sesi yok", "none"));
+
+  let index = list.findIndex((v) => /en.US/i.test(v.lang) && /female|zira|aria|jenny|samantha|google us/i.test(v.name));
   if (index < 0) index = list.findIndex((v) => /en.US/i.test(v.lang));
-  select.value = String(Math.max(index, 0));
+  fallbackVoice = list[Math.max(index, 0)];
+
+  const kept = list.findIndex((v) => v.name === previous);
+  select.value = kept >= 0 ? String(kept) : "natural";
 });
 
 // ------------------------------------------------------------------ lesson flow
@@ -104,10 +109,12 @@ function addTurn(role, text, correction, tip) {
 function teacherSays(text) {
   return new Promise((resolve) => {
     stage.board.setText(text);
-    speak(text, {
-      voice: voices[Number($("voice").value)],
+    const choice = $("voice").value;
+    say(text, {
+      natural: choice === "natural",
+      browserVoice: voices[Number(choice)] ?? fallbackVoice,
       rate: Number($("rate").value),
-      onStart: () => teacher?.startTalking(),
+      onStart: (level) => teacher?.startTalking(level),
       onWord: (index, word) => {
         teacher?.speakWord(word);
         stage.board.highlightWord(index);
@@ -146,8 +153,8 @@ async function exchange(message) {
 
 $("btn-start").addEventListener("click", () => {
   if (busy) return;
-  unlockSpeech();
-  stopSpeaking();
+  unlockVoices();
+  stopVoice();
   lesson.reset({ scenario: $("scenario").value, level: $("level").value });
   started = true;
   $("transcript").replaceChildren();
@@ -163,7 +170,7 @@ $("say-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = $("sentence").value.trim();
   if (!text || busy || !started) return;
-  unlockSpeech();
+  unlockVoices();
   $("sentence").value = "";
   if (touchDevice) $("sentence").blur();
   exchange(text);
@@ -181,8 +188,8 @@ $("btn-mic").addEventListener("click", () => {
     recording.stop();
     return;
   }
-  unlockSpeech();
-  stopSpeaking();
+  unlockVoices();
+  stopVoice();
   $("btn-mic").classList.add("on");
   setStatus("Dinliyorum… İngilizce konuş.");
   recording = listen({

@@ -147,14 +147,59 @@ function corsHeaders(request, env) {
   };
 }
 
-async function route(request, env) {
-  const url = new URL(request.url);
-  if (url.pathname === "/api/chat") {
-    if (request.method === "OPTIONS") return new Response(null, { status: 204 });
-    if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-    return chat(request, env);
+const TTS_MODEL = "@cf/myshell-ai/melotts";
+
+/** Öğretmenin cümlesini Cloudflare Workers AI (ücretsiz günlük kota) ile MP3'e çevirir. */
+async function tts(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad_request" }, 400);
   }
-  return json({ error: "not_found" }, 404);
+  const text = clip(body?.text, MAX_MESSAGE);
+  if (!text) return json({ error: "bad_request" }, 400);
+  if (!env.AI) return json({ error: "tts_unavailable" }, 503);
+
+  // Model sık sık "3043: Internal server error" veriyor; kısa beklemeyle tekrar denenince genelde geçiyor.
+  const attempts = Number(env.TTS_ATTEMPTS ?? 4);
+  let out;
+  for (let attempt = 1; !out; attempt++) {
+    try {
+      out = await env.AI.run(TTS_MODEL, { prompt: text, lang: "en" });
+    } catch (err) {
+      console.error(`TTS error (deneme ${attempt})`, err?.message ?? err);
+      // Günlük ücretsiz kota dolunca da buraya düşer; tarayıcı kendi sesine geçer.
+      if (attempt >= attempts) return json({ error: "tts_unavailable", detail: String(err?.message ?? err).slice(0, 200), attempt }, 503);
+      await new Promise((r) => setTimeout(r, 150 * attempt));
+    }
+  }
+
+  let audio;
+  if (out instanceof ReadableStream || out instanceof ArrayBuffer || ArrayBuffer.isView(out)) {
+    audio = out;
+  } else if (typeof out?.audio === "string") {
+    audio = Uint8Array.from(atob(out.audio), (c) => c.charCodeAt(0));
+  } else {
+    return json({ error: "tts_unavailable", detail: `unexpected output: ${Object.prototype.toString.call(out)} ${JSON.stringify(Object.keys(out ?? {}))}` }, 503);
+  }
+  // MeloTTS şu an WAV döndürüyor; biçimi başlıktan anlayıp doğru türü bildir.
+  let type = "audio/mpeg";
+  if (!(audio instanceof ReadableStream)) {
+    const bytes = ArrayBuffer.isView(audio) ? new Uint8Array(audio.buffer, audio.byteOffset, audio.byteLength) : new Uint8Array(audio);
+    if (String.fromCharCode(...bytes.subarray(0, 4)) === "RIFF") type = "audio/wav";
+  }
+  return new Response(audio, { headers: { "content-type": type, "cache-control": "no-store" } });
+}
+
+const ROUTES = { "/api/chat": chat, "/api/tts": tts };
+
+async function route(request, env) {
+  const handler = ROUTES[new URL(request.url).pathname];
+  if (!handler) return json({ error: "not_found" }, 404);
+  if (request.method === "OPTIONS") return new Response(null, { status: 204 });
+  if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+  return handler(request, env);
 }
 
 export default {

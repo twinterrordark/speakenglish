@@ -79,13 +79,16 @@ class Teacher {
     this._smileTimer = setTimeout(() => (this.target.smile = 0.25), seconds * 1000);
   }
 
-  startTalking() {
+  /** level() verilirse ağız gerçek ses yüksekliğini (0–1) izler; yoksa hece ritmi taklit edilir. */
+  startTalking(level = null) {
     this.talking = true;
+    this.level = level;
     if (this.current !== this.actions.Wave && this.current !== this.actions.Nod) this._fadeTo("Talk");
   }
 
   stopTalking() {
     this.talking = false;
+    this.level = null;
     this.target.mouthOpen = 0;
     this.target.mouthRound = 0;
     if (this.current === this.actions.Talk) this._fadeTo("Idle");
@@ -119,7 +122,9 @@ class Teacher {
     }
 
     // Dudak hareketi: hece ritminde salınım + kelime sınırlarında vurgu
-    if (this.talking) {
+    if (this.talking && this.level) {
+      this.target.mouthOpen = Math.min(1, this.level() * 1.1);
+    } else if (this.talking) {
       const t = this.time;
       const syllable = Math.abs(Math.sin(t * 11)) * 0.55 + Math.abs(Math.sin(t * 17.3)) * 0.25;
       this.target.mouthOpen = Math.min(1, 0.1 + syllable + this.pulse * 0.35);
