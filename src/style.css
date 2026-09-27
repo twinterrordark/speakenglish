@@ -189,7 +189,8 @@ button.primary:hover { background: #288680; }
   gap: 6px;
 }
 
-.transcript:empty { display: none; }
+.transcript:empty,
+.transcript[hidden] { display: none; }
 
 .transcript li {
   font-size: 14px;
@@ -273,7 +274,92 @@ button.primary:hover { background: #288680; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.icon-only { display: none; }
+
+.history {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 17px;
+  flex: none;
+}
+
+.history.on {
+  background: #e6f4f2;
+  border-color: var(--accent);
+}
+
+/* ---------------------------------------------------------------- telefon */
 @media (max-width: 600px) {
-  .panel { bottom: 8px; padding: 10px; }
-  .field select { max-width: 140px; }
+  .brand {
+    top: calc(10px + env(safe-area-inset-top));
+    left: 10px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .panel {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    width: 100%;
+    border-radius: 18px 18px 0 0;
+    border-bottom: 0;
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+
+  .label-text { display: none; }
+  .icon-only { display: inline; }
+
+  .settings { flex-wrap: nowrap; gap: 6px; }
+  .settings > .field { flex: 1 1 0; min-width: 0; }
+  .settings > .field select { width: 100%; max-width: none; padding: 8px 6px; }
+  .settings > .field:nth-child(2) { flex: 0 0 64px; }
+  #btn-start { flex: none; padding: 8px 12px; }
+
+  .more { margin-left: 0; flex: none; }
+  .more[open] { flex-basis: auto; }
+  .more summary { font-size: 18px; padding: 6px 4px; }
+  /* Açılan ayarlar paneli, satırı bozmadan panelin üstünde kart olarak durur. */
+  .more[open] .more-body {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: calc(100% + 8px);
+    padding: 12px;
+    border-radius: 16px;
+    background: #fffcf6;
+    border: 1px solid var(--line);
+    box-shadow: 0 12px 40px rgba(60, 40, 20, 0.15);
+  }
+  .more-body .field { flex: 1 1 100%; justify-content: space-between; }
+  .more-body .field select { max-width: 65%; }
+
+  .say { flex-wrap: nowrap; gap: 6px; }
+  .say input { flex: 1 1 auto; padding: 10px; }
+  .send {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: 50%;
+    flex: none;
+  }
+
+  .transcript { max-height: 28vh; }
+  .transcript li { font-size: 13px; max-width: 92%; }
+}
+
+/* Yatay tutulan telefon: panel dar ve alçak */
+@media (max-height: 500px) and (orientation: landscape) {
+  .brand { display: none; }
+  .panel { width: min(560px, calc(100% - 16px)); bottom: 6px; padding: 8px; gap: 6px; }
+  .transcript { max-height: 32vh; }
+}
+
+/* iOS, 16px altındaki kutularda odaklanınca sayfayı yakınlaştırıyor. */
+@media (pointer: coarse) {
+  input, select { font-size: 16px; }
 }

@@ -2,7 +2,7 @@
 <html lang="tr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Ms. Emma — 3D English Class</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -24,16 +24,16 @@
     <section class="panel" aria-label="Pratik paneli">
       <div class="row settings">
         <label class="field">
-          Konu
-          <select id="scenario"></select>
+          <span class="label-text">Konu</span>
+          <select id="scenario" aria-label="Konu"></select>
         </label>
         <label class="field">
-          Seviye
-          <select id="level"></select>
+          <span class="label-text">Seviye</span>
+          <select id="level" aria-label="Seviye"></select>
         </label>
-        <button id="btn-start" type="button" class="primary">▶ Derse başla</button>
+        <button id="btn-start" type="button" class="primary">▶ Başla</button>
         <details class="more">
-          <summary>⚙ Ayarlar</summary>
+          <summary aria-label="Ayarlar">⚙<span class="label-text"> Ayarlar</span></summary>
           <div class="more-body">
             <label class="field">
               Ses
@@ -54,19 +54,22 @@
               Anahtar sadece bu tarayıcıda saklanır. Boş bırakırsan sitenin anahtarı kullanılır.
               Ücretsiz anahtar: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>
             </p>
+            <p class="hint">Konuşmalar yanıt üretmek için Google Gemini'ye gönderilir.</p>
           </div>
         </details>
       </div>
 
-      <ol id="transcript" class="transcript" aria-live="polite"></ol>
+      <ol id="transcript" class="transcript" aria-live="polite" hidden></ol>
       <p id="status" class="status" role="status"></p>
 
       <form id="say-form" class="row say">
         <button id="btn-mic" type="button" class="mic" title="Konuş" aria-label="Mikrofonla konuş">🎤</button>
-        <input id="sentence" type="text" autocomplete="off" placeholder="Önce derse başla, sonra konuş ya da yaz…" disabled />
-        <button id="btn-send" type="submit" class="primary" disabled>Gönder</button>
+        <input id="sentence" type="text" autocomplete="off" enterkeyhint="send" placeholder="Önce derse başla…" disabled />
+        <button id="btn-send" type="submit" class="primary send" disabled aria-label="Gönder">
+          <span class="label-text">Gönder</span><span class="icon-only">➤</span>
+        </button>
+        <button id="btn-history" type="button" class="history" aria-pressed="false" title="Konuşma geçmişi" aria-label="Konuşma geçmişini göster">💬</button>
       </form>
-      <p class="hint small">Konuşmalar yanıt üretmek için Google Gemini'ye gönderilir.</p>
     </section>
 
     <script type="module" src="/src/main.js"></script>

@@ -2,8 +2,6 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
-const TEACHER_POS = new THREE.Vector3(-0.75, 0, 0.1);
-
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -18,15 +16,12 @@ export function createScene(canvas) {
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   scene.environmentIntensity = 0.35;
 
-  const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 50);
-  camera.position.set(0.1, 1.5, 4.4);
+  const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 60);
 
   const controls = new OrbitControls(camera, canvas);
-  controls.target.set(-0.1, 1.2, 0);
   controls.enableDamping = true;
   controls.enablePan = false;
   controls.minDistance = 1.6;
-  controls.maxDistance = 6.5;
   controls.minPolarAngle = 0.9;
   controls.maxPolarAngle = 1.65;
   controls.minAzimuthAngle = -0.9;
@@ -35,24 +30,63 @@ export function createScene(canvas) {
   addLights(scene);
   addRoom(scene);
   const board = createChalkboard();
-  board.mesh.position.set(0.55, 1.55, -1.52);
   scene.add(board.mesh);
   addDesk(scene);
   addPlant(scene);
+
+  // Öğretmen modeli buraya eklenir; yerleşim değişince onunla birlikte taşınır.
+  const teacherAnchor = new THREE.Group();
+  scene.add(teacherAnchor);
+
+  let layoutKey = "";
+
+  /** Yatay ekranda tahta öğretmenin yanında, dikey (telefon) ekranda üstünde durur. */
+  function applyLayout(w, h) {
+    const aspect = w / h;
+    const portrait = aspect < 0.85;
+    // Tarayıcı çubuğu gizlenince sadece yükseklik değişir; kamerayı o yüzden sıfırlamayalım.
+    const key = portrait ? `p${w}` : "l";
+    if (key === layoutKey) return;
+    layoutKey = key;
+
+    if (portrait) {
+      camera.fov = 50;
+      board.setLarge(true);
+      // Tahtanın alt kenarı öğretmenin başının (≈2 m) üstünde kalsın.
+      board.mesh.position.set(0.1, 2.08 + board.height / 2, -1.52);
+      teacherAnchor.position.set(0, 0, 0.25);
+      teacherAnchor.rotation.y = 0;
+      // Tahtanın tamamı (2.8 m) ekran genişliğine sığacak kadar geri çekil.
+      const halfWidth = 1.55;
+      const d = THREE.MathUtils.clamp(halfWidth / (Math.tan(THREE.MathUtils.degToRad(25)) * aspect), 4, 11);
+      camera.position.set(0.1, 2.0, -1.52 + d);
+      controls.target.set(0.1, 1.75, -1.52);
+      controls.maxDistance = d + 2;
+    } else {
+      camera.fov = 35;
+      board.setLarge(false);
+      board.mesh.position.set(0.55, 1.55, -1.52);
+      teacherAnchor.position.set(-0.75, 0, 0.1);
+      teacherAnchor.rotation.y = 0.2;
+      camera.position.set(0.1, 1.5, 4.4);
+      controls.target.set(-0.1, 1.2, 0);
+      controls.maxDistance = 6.5;
+    }
+    controls.update();
+  }
 
   function resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
-    // Dar ekranlarda sahneyi sığdırmak için geri çekil.
-    camera.fov = w < h ? 50 : 35;
+    applyLayout(w, h);
     camera.updateProjectionMatrix();
   }
   window.addEventListener("resize", resize);
   resize();
 
-  return { renderer, scene, camera, controls, board, teacherPosition: TEACHER_POS.clone() };
+  return { renderer, scene, camera, controls, board, teacherAnchor };
 }
 
 function addLights(scene) {
@@ -214,9 +248,8 @@ function addPlant(scene) {
 function createChalkboard() {
   const W = 2.6;
   const H = 1.25;
+  const PX_PER_M = 640; // tuval çözünürlüğü: 2.6 m → 1664 px
   const canvas = document.createElement("canvas");
-  canvas.width = 1664;
-  canvas.height = 800;
   const ctx = canvas.getContext("2d");
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -239,10 +272,41 @@ function createChalkboard() {
     new THREE.BoxGeometry(W, 0.03, 0.08),
     new THREE.MeshStandardMaterial({ color: "#7a4d31", roughness: 0.6 }),
   );
-  tray.position.set(0, -H / 2 - 0.05, 0.06);
+  tray.position.z = 0.06;
   group.add(tray);
 
-  const state = { title: "Welcome to English Class!", text: "", highlight: -1, correction: "", tip: "" };
+  const state = { title: "Welcome to English Class!", text: "", highlight: -1, correction: "", tip: "", large: false };
+  let background = null;
+
+  /** Tahta boyunu ayarlar; dikey ekranda daha uzun tahta ve daha büyük yazı kullanılır. */
+  function resizeBoard(height) {
+    const k = height / H;
+    surface.scale.y = k;
+    frame.scale.y = (height + 0.12) / (H + 0.12);
+    tray.position.y = -height / 2 - 0.05;
+    canvas.width = Math.round(W * PX_PER_M);
+    canvas.height = Math.round(height * PX_PER_M);
+    texture.dispose(); // GPU'daki doku yeni boyutla yeniden oluşturulsun
+    background = paintBackground(canvas.width, canvas.height);
+  }
+
+  /** Yeşil zemin ve tebeşir tozu bir kez çizilir; her kelime vurgusunda titremesin. */
+  function paintBackground(w, h) {
+    const bg = document.createElement("canvas");
+    bg.width = w;
+    bg.height = h;
+    const g = bg.getContext("2d");
+    const grad = g.createRadialGradient(w / 2, h / 2, 100, w / 2, h / 2, w * 0.7);
+    grad.addColorStop(0, "#35584a");
+    grad.addColorStop(1, "#243f35");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 900; i++) {
+      g.fillStyle = `rgba(255,255,255,${Math.random() * 0.035})`;
+      g.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 30, 1 + Math.random() * 2);
+    }
+    return bg;
+  }
 
   function wrap(words, maxWidth) {
     const lines = [];
@@ -259,37 +323,38 @@ function createChalkboard() {
     return lines;
   }
 
+  const font = (weight, px) => `${weight} ${Math.round(px)}px Caveat, 'Comic Sans MS', cursive`;
+
   function draw() {
     const { width: w, height: h } = canvas;
-    const grad = ctx.createRadialGradient(w / 2, h / 2, 100, w / 2, h / 2, w * 0.7);
-    grad.addColorStop(0, "#35584a");
-    grad.addColorStop(1, "#243f35");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-    // Tebeşir tozu
-    for (let i = 0; i < 900; i++) {
-      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.035})`;
-      ctx.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 30, 1 + Math.random() * 2);
-    }
+    const s = state.large ? 1.3 : 1; // yazı ölçeği
+    const left = 90;
+    const maxWidth = w - 2 * left;
+    ctx.drawImage(background, 0, 0);
 
     ctx.fillStyle = "#f6f1e3";
     ctx.textBaseline = "top";
-    ctx.font = "700 96px Caveat, 'Comic Sans MS', cursive";
-    ctx.fillText(state.title, 90, 60);
-    ctx.fillRect(90, 175, ctx.measureText(state.title).width, 4);
+    ctx.font = font(700, 96 * s);
+    ctx.fillText(state.title, left, 50);
+    ctx.fillRect(left, 50 + 112 * s, ctx.measureText(state.title).width, 4);
+
+    const textTop = 80 + 145 * s;
+    const lineHeight = 100 * s;
+    const corrTop = h - 60 - 150 * s;
 
     if (state.text) {
-      ctx.font = "500 84px Caveat, 'Comic Sans MS', cursive";
+      ctx.font = font(500, 84 * s);
       const words = state.text.split(/\s+/).filter(Boolean).map((word, i) => ({ word, i }));
-      const lines = wrap(words, w - 180).slice(0, state.correction ? 3 : 5);
-      lines.forEach((line, li) => {
-        let x = 90;
-        const y = 230 + li * 100;
+      const bottom = state.correction ? corrTop - 30 : h - 30;
+      const maxLines = Math.max(1, Math.floor((bottom - textTop) / lineHeight));
+      wrap(words, maxWidth).slice(0, maxLines).forEach((line, li) => {
+        let x = left;
+        const y = textTop + li * lineHeight;
         for (const { word, i } of line) {
           const ww = ctx.measureText(word).width;
           if (i === state.highlight) {
             ctx.fillStyle = "rgba(255, 214, 102, 0.25)";
-            ctx.fillRect(x - 8, y + 4, ww + 16, 86);
+            ctx.fillRect(x - 8, y + 4 * s, ww + 16, 86 * s);
             ctx.fillStyle = "#ffd666";
           } else {
             ctx.fillStyle = "#f6f1e3";
@@ -299,35 +364,45 @@ function createChalkboard() {
         }
       });
     } else {
-      ctx.font = "500 64px Caveat, 'Comic Sans MS', cursive";
+      ctx.font = font(500, 64 * s);
       ctx.fillStyle = "rgba(246, 241, 227, 0.7)";
-      ctx.fillText("Choose a topic and press start ✎", 90, 250);
+      ctx.fillText("Choose a topic and press start ✎", left, textTop + 20);
     }
 
     if (state.correction) {
-      const y = 560;
+      const fit = (text) => {
+        let fitted = text;
+        while (ctx.measureText(fitted).width > maxWidth && fitted.length > 4) fitted = fitted.slice(0, -2);
+        return fitted === text ? text : fitted + "…";
+      };
       ctx.fillStyle = "rgba(246, 241, 227, 0.35)";
-      ctx.fillRect(90, y - 20, w - 180, 3);
+      ctx.fillRect(left, corrTop - 20, maxWidth, 3);
       ctx.fillStyle = "#9be89b";
-      ctx.font = "700 64px Caveat, 'Comic Sans MS', cursive";
-      const text = "✓ " + state.correction;
-      let fitted = text;
-      while (ctx.measureText(fitted).width > w - 180 && fitted.length > 4) fitted = fitted.slice(0, -2);
-      ctx.fillText(fitted === text ? text : fitted + "…", 90, y);
+      ctx.font = font(700, 64 * s);
+      ctx.fillText(fit("✓ " + state.correction), left, corrTop);
       if (state.tip) {
         ctx.fillStyle = "rgba(246, 241, 227, 0.8)";
-        ctx.font = "500 52px Caveat, 'Comic Sans MS', cursive";
-        ctx.fillText(state.tip, 90, y + 90);
+        ctx.font = font(500, 52 * s);
+        ctx.fillText(fit(state.tip), left, corrTop + 90 * s);
       }
     }
     texture.needsUpdate = true;
   }
 
+  resizeBoard(H);
   draw();
   document.fonts?.load("700 96px Caveat").then(draw).catch(() => {});
 
   return {
     mesh: group,
+    /** Dikey ekranda tahtanın gerçek yüksekliği (m). */
+    get height() { return state.large ? 1.8 : H; },
+    setLarge(large) {
+      if (state.large === large) return;
+      state.large = large;
+      resizeBoard(large ? 1.8 : H);
+      draw();
+    },
     setTitle(title) { state.title = title; draw(); },
     setText(text) { state.text = text; state.highlight = -1; draw(); },
     highlightWord(index) { state.highlight = index; draw(); },

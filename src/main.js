@@ -1,11 +1,12 @@
 import * as THREE from "three";
 import { createScene } from "./scene.js";
 import { loadTeacher } from "./teacher.js";
-import { loadEnglishVoices, speak, speechSupported, stopSpeaking } from "./speech.js";
+import { speak, speechSupported, stopSpeaking, unlockSpeech, watchEnglishVoices } from "./speech.js";
 import { listen, listenSupported } from "./listen.js";
 import { Lesson, LEVELS, SCENARIOS } from "./lesson.js";
 
 const KEY_STORAGE = "msEmma.userKey";
+const touchDevice = window.matchMedia("(pointer: coarse)").matches;
 
 const $ = (id) => document.getElementById(id);
 const stage = createScene($("stage"));
@@ -22,9 +23,7 @@ stage.renderer.setAnimationLoop(() => {
 loadTeacher(`${import.meta.env.BASE_URL}models/teacher.glb`)
   .then((t) => {
     teacher = t;
-    t.root.position.copy(stage.teacherPosition);
-    t.root.rotation.y = 0.2;
-    stage.scene.add(t.root);
+    stage.teacherAnchor.add(t.root);
     $("loader").classList.add("hidden");
     setTimeout(() => t.wave(), 600);
   })
@@ -50,16 +49,20 @@ $("user-key").value = storage("get");
 $("user-key").addEventListener("change", (e) => storage("set", e.target.value.trim()));
 
 let voices = [];
-loadEnglishVoices().then((list) => {
-  voices = list;
+watchEnglishVoices((list) => {
   const select = $("voice");
+  const previous = voices[Number(select.value)]?.name;
+  voices = list;
+  select.replaceChildren();
   if (!list.length) {
     select.append(new Option(speechSupported ? "Varsayılan" : "Desteklenmiyor", ""));
     return;
   }
   list.forEach((v, i) => select.append(new Option(`${v.name} (${v.lang})`, String(i))));
-  const preferred = list.findIndex((v) => v.lang === "en-US" && /female|zira|aria|jenny|samantha|google us/i.test(v.name));
-  select.value = String(preferred >= 0 ? preferred : 0);
+  let index = list.findIndex((v) => v.name === previous);
+  if (index < 0) index = list.findIndex((v) => /en.US/i.test(v.lang) && /female|zira|aria|jenny|samantha|google us/i.test(v.name));
+  if (index < 0) index = list.findIndex((v) => /en.US/i.test(v.lang));
+  select.value = String(Math.max(index, 0));
 });
 
 // ------------------------------------------------------------------ lesson flow
@@ -136,18 +139,20 @@ async function exchange(message) {
     if (message) $("sentence").value = message;
   } finally {
     setBusy(false);
-    if (started) $("sentence").focus();
+    // Telefonda klavye açılıp sahneyi kapatmasın.
+    if (started && !touchDevice) $("sentence").focus();
   }
 }
 
 $("btn-start").addEventListener("click", () => {
   if (busy) return;
+  unlockSpeech();
   stopSpeaking();
   lesson.reset({ scenario: $("scenario").value, level: $("level").value });
   started = true;
   $("transcript").replaceChildren();
-  $("sentence").placeholder = listenSupported ? "🎤 ile konuş ya da buraya yaz…" : "Cevabını İngilizce yaz…";
-  $("btn-start").textContent = "↻ Yeniden başla";
+  $("sentence").placeholder = listenSupported ? "🎤 konuş ya da yaz…" : "İngilizce yaz…";
+  $("btn-start").textContent = "↻ Baştan";
   stage.board.setTitle(SCENARIOS[lesson.scenario].title);
   stage.board.setCorrection("", "");
   teacher?.wave();
@@ -158,7 +163,9 @@ $("say-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = $("sentence").value.trim();
   if (!text || busy || !started) return;
+  unlockSpeech();
   $("sentence").value = "";
+  if (touchDevice) $("sentence").blur();
   exchange(text);
 });
 
@@ -174,6 +181,7 @@ $("btn-mic").addEventListener("click", () => {
     recording.stop();
     return;
   }
+  unlockSpeech();
   stopSpeaking();
   $("btn-mic").classList.add("on");
   setStatus("Dinliyorum… İngilizce konuş.");
@@ -197,4 +205,14 @@ $("btn-mic").addEventListener("click", () => {
       if ($("status").textContent.startsWith("Dinliyorum")) setStatus("");
     },
   });
+});
+
+// ------------------------------------------------------------------ history toggle
+// Konuşma tahtada göründüğü için geçmiş varsayılan olarak gizli.
+$("btn-history").addEventListener("click", () => {
+  const list = $("transcript");
+  list.hidden = !list.hidden;
+  $("btn-history").setAttribute("aria-pressed", String(!list.hidden));
+  $("btn-history").classList.toggle("on", !list.hidden);
+  if (!list.hidden) list.scrollTop = list.scrollHeight;
 });
