@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "english-teacher-3d",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "not_found_handling": "none",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    // Ücretsiz katmandaki başka bir modele geçmek için değiştirin (ör. "gemini-3.8-flash").
+    // Model "minimal" desteklemiyorsa GEMINI_THINKING_LEVEL değerini "low" yapın.
+    "GEMINI_MODEL": "gemini-3.5-flash-lite",
+    "GEMINI_THINKING_LEVEL": "minimal"
+  }
+}

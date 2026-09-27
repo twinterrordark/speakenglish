@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ms. Emma — 3D English Class</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Nunito:wght@400;600;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+
+    <div id="loader">
+      <div class="spinner"></div>
+      <p>Ms. Emma sınıfa geliyor…</p>
+    </div>
+
+    <header class="brand">
+      <span class="dot"></span> Ms. Emma's English Class
+    </header>
+
+    <section class="panel" aria-label="Pratik paneli">
+      <div class="row settings">
+        <label class="field">
+          Konu
+          <select id="scenario"></select>
+        </label>
+        <label class="field">
+          Seviye
+          <select id="level"></select>
+        </label>
+        <button id="btn-start" type="button" class="primary">▶ Derse başla</button>
+        <details class="more">
+          <summary>⚙ Ayarlar</summary>
+          <div class="more-body">
+            <label class="field">
+              Ses
+              <select id="voice"></select>
+            </label>
+            <label class="field">
+              Hız
+              <select id="rate">
+                <option value="0.8">Yavaş</option>
+                <option value="1" selected>Normal</option>
+              </select>
+            </label>
+            <label class="field key">
+              🔑 Kendi Gemini anahtarın (isteğe bağlı)
+              <input id="user-key" type="password" autocomplete="off" placeholder="AIza…" />
+            </label>
+            <p class="hint">
+              Anahtar sadece bu tarayıcıda saklanır. Boş bırakırsan sitenin anahtarı kullanılır.
+              Ücretsiz anahtar: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>
+            </p>
+          </div>
+        </details>
+      </div>
+
+      <ol id="transcript" class="transcript" aria-live="polite"></ol>
+      <p id="status" class="status" role="status"></p>
+
+      <form id="say-form" class="row say">
+        <button id="btn-mic" type="button" class="mic" title="Konuş" aria-label="Mikrofonla konuş">🎤</button>
+        <input id="sentence" type="text" autocomplete="off" placeholder="Önce derse başla, sonra konuş ya da yaz…" disabled />
+        <button id="btn-send" type="submit" class="primary" disabled>Gönder</button>
+      </form>
+      <p class="hint small">Konuşmalar yanıt üretmek için Google Gemini'ye gönderilir.</p>
+    </section>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
