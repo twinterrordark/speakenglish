@@ -275,7 +275,15 @@ function createChalkboard() {
   tray.position.z = 0.06;
   group.add(tray);
 
-  const state = { title: "Welcome to English Class!", text: "", highlight: -1, correction: "", tip: "", large: false };
+  const state = {
+    title: "Welcome to English Class!",
+    text: "",
+    highlight: -1,
+    correction: "",
+    tip: "",
+    large: false,
+    picture: null, // { emoji, word, tr, progress }
+  };
   let background = null;
 
   /** Tahta boyunu ayarlar; dikey ekranda daha uzun tahta ve daha büyük yazı kullanılır. */
@@ -339,6 +347,9 @@ function createChalkboard() {
     ctx.fillRect(left, 50 + 112 * s, ctx.measureText(state.title).width, 4);
 
     const textTop = 80 + 145 * s;
+    // Resim varsa sağda bir sütun ayrılır; cümle o sütuna taşmadan kaydırılır.
+    const pictureWidth = 300 * s;
+    const textWidth = state.picture ? maxWidth - pictureWidth - 30 : maxWidth;
     const lineHeight = 100 * s;
     const corrTop = h - 60 - 150 * s;
 
@@ -347,7 +358,7 @@ function createChalkboard() {
       const words = state.text.split(/\s+/).filter(Boolean).map((word, i) => ({ word, i }));
       const bottom = state.correction ? corrTop - 30 : h - 30;
       const maxLines = Math.max(1, Math.floor((bottom - textTop) / lineHeight));
-      wrap(words, maxWidth).slice(0, maxLines).forEach((line, li) => {
+      wrap(words, textWidth).slice(0, maxLines).forEach((line, li) => {
         let x = left;
         const y = textTop + li * lineHeight;
         for (const { word, i } of line) {
@@ -369,12 +380,15 @@ function createChalkboard() {
       ctx.fillText("Choose a topic and press start ✎", left, textTop + 20);
     }
 
+    const fit = (text, width = maxWidth) => {
+      let fitted = text;
+      while (ctx.measureText(fitted).width > width && fitted.length > 4) fitted = fitted.slice(0, -2);
+      return fitted === text ? text : fitted + "…";
+    };
+
+    if (state.picture) drawPicture(state.picture, w - left - pictureWidth, 40, pictureWidth, s, fit);
+
     if (state.correction) {
-      const fit = (text) => {
-        let fitted = text;
-        while (ctx.measureText(fitted).width > maxWidth && fitted.length > 4) fitted = fitted.slice(0, -2);
-        return fitted === text ? text : fitted + "…";
-      };
       ctx.fillStyle = "rgba(246, 241, 227, 0.35)";
       ctx.fillRect(left, corrTop - 20, maxWidth, 3);
       ctx.fillStyle = "#9be89b";
@@ -387,6 +401,51 @@ function createChalkboard() {
       }
     }
     texture.needsUpdate = true;
+  }
+
+  /**
+   * Kelimeyi anlatan emoji, tebeşirle çiziliyormuş gibi yukarıdan aşağı belirir;
+   * altında kelime ve Türkçesi yazar.
+   */
+  function drawPicture({ emoji, word, tr, progress }, x, y, width, s, fit) {
+    const size = 170 * s;
+    const cx = x + width / 2;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x - 20, y, width + 40, (size + 30) * progress);
+    ctx.clip();
+    if ("filter" in ctx) ctx.filter = "grayscale(1) brightness(1.75) contrast(0.9)";
+    ctx.globalAlpha = 0.92;
+    ctx.textAlign = "center";
+    ctx.font = `${Math.round(size)}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+    ctx.fillText(emoji, cx, y + 10);
+    ctx.restore();
+
+    if (progress < 1) return;
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffe79a";
+    ctx.font = font(700, 60 * s);
+    ctx.fillText(fit(word, width + 40), cx, y + size + 30);
+    if (tr) {
+      ctx.fillStyle = "rgba(246, 241, 227, 0.75)";
+      ctx.font = font(500, 46 * s);
+      ctx.fillText(fit(tr, width + 40), cx, y + size + 30 + 68 * s);
+    }
+    ctx.restore();
+  }
+
+  let pictureAnim = 0;
+  function animatePicture() {
+    cancelAnimationFrame(pictureAnim);
+    const start = performance.now();
+    const step = (now) => {
+      if (!state.picture) return;
+      state.picture.progress = Math.min(1, (now - start) / 900);
+      draw();
+      if (state.picture.progress < 1) pictureAnim = requestAnimationFrame(step);
+    };
+    pictureAnim = requestAnimationFrame(step);
   }
 
   resizeBoard(H);
@@ -407,5 +466,11 @@ function createChalkboard() {
     setText(text) { state.text = text; state.highlight = -1; draw(); },
     highlightWord(index) { state.highlight = index; draw(); },
     setCorrection(correction, tip) { state.correction = correction; state.tip = tip; draw(); },
+    /** Emoji yoksa resim kaldırılır. */
+    setPicture({ emoji, word, tr } = {}) {
+      state.picture = emoji && word ? { emoji, word, tr, progress: 0 } : null;
+      if (state.picture) animatePicture();
+      else draw();
+    },
   };
 }

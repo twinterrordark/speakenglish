@@ -20,11 +20,14 @@ const RESPONSE_SCHEMA = {
     reply: { type: "string" },
     correction: { type: "string" },
     tip: { type: "string" },
+    word: { type: "string" },
+    wordTr: { type: "string" },
+    emoji: { type: "string" },
   },
-  required: ["reply", "correction", "tip"],
+  required: ["reply", "correction", "tip", "word", "wordTr", "emoji"],
 };
 
-function systemPrompt(scenario, level) {
+function systemPrompt(scenario, level, review) {
   return `You are Ms. Emma, a warm, encouraging English teacher. You are talking with a ${level} (CEFR) learner whose native language is Turkish.
 Scenario: ${SCENARIOS[scenario]}
 
@@ -32,8 +35,21 @@ Rules:
 - "reply": what you say out loud. Simple English suitable for ${level}. At most 2 short sentences (under 30 words). Usually end with a question to keep the conversation going.
 - "correction": if the student's LAST message has grammar, vocabulary, or word-choice mistakes, write the corrected version of their whole sentence. Otherwise "". Ignore capitalization and punctuation; the text comes from speech recognition.
 - "tip": if there is a correction, explain the mistake in Turkish in at most 12 words. Otherwise "".
+- "word": one useful English word or short phrase from your reply or this topic that a ${level} learner should learn (e.g. "order", "boarding pass"). Pick a new one each turn when possible; "" if nothing fits.
+- "wordTr": the Turkish meaning of "word" in 1-3 words, or "".
+- "emoji": exactly one emoji that illustrates "word" (it is drawn on the chalkboard), or "" if no emoji fits.
 - If the student writes in Turkish, reply in English, and put the English version of what they meant in "correction".
-- Stay in character. No emojis, no markdown.`;
+- Stay in character. No emojis or markdown inside "reply".${reviewNote(review)}`;
+}
+
+/** Önceki derslerdeki düzeltmeler: öğretmen bunları sohbet içinde tekrar pratik ettirir. */
+function reviewNote(review) {
+  if (!review.length) return "";
+  return `
+
+In earlier lessons the student needed these corrections:
+${review.map((r) => `- ${r}`).join("\n")}
+When it fits naturally, ask questions that let them practice these forms again.`;
 }
 
 function json(data, status = 200) {
@@ -71,7 +87,11 @@ function parseBody(body) {
     .filter((t) => t && (t.role === "user" || t.role === "model"))
     .map((t) => ({ role: t.role, text: clip(t.text, 600) }))
     .filter((t) => t.text);
-  return { scenario, level, message, history };
+  const review = (Array.isArray(body?.review) ? body.review : [])
+    .slice(0, 3)
+    .map((r) => clip(r, 150))
+    .filter(Boolean);
+  return { scenario, level, message, history, review };
 }
 
 async function chat(request, env) {
@@ -81,7 +101,7 @@ async function chat(request, env) {
   } catch {
     return json({ error: "bad_request" }, 400);
   }
-  const { scenario, level, message, history } = parseBody(body);
+  const { scenario, level, message, history, review } = parseBody(body);
   const apiKey = clip(request.headers.get("x-user-key"), 200) || env.GEMINI_API_KEY;
   if (!apiKey) return json({ error: "no_key" }, 503);
 
@@ -105,7 +125,7 @@ async function chat(request, env) {
     method: "POST",
     headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: systemPrompt(scenario, level) }] },
+      systemInstruction: { parts: [{ text: systemPrompt(scenario, level, review) }] },
       contents,
       generationConfig,
     }),
@@ -130,7 +150,16 @@ async function chat(request, env) {
   }
   const reply = limitSentences(clip(out.reply, 400));
   if (!reply) return json({ error: "empty" }, 502);
-  return json({ reply, correction: clip(out.correction, 400), tip: clip(out.tip, 200) });
+  const emoji = clip(out.emoji, 16);
+  const word = clip(out.word, 40);
+  return json({
+    reply,
+    correction: clip(out.correction, 400),
+    tip: clip(out.tip, 200),
+    word,
+    wordTr: word ? clip(out.wordTr, 40) : "",
+    emoji: /\p{Extended_Pictographic}/u.test(emoji) && [...emoji].length <= 8 ? emoji : "",
+  });
 }
 
 /** Sadece ALLOWED_ORIGINS listesindeki siteler (ör. GitHub Pages) tarayıcıdan çağırabilir. */
@@ -192,14 +221,25 @@ async function tts(request, env) {
   return new Response(audio, { headers: { "content-type": type, "cache-control": "no-store" } });
 }
 
-const ROUTES = { "/api/chat": chat, "/api/tts": tts };
+const ROUTES = {
+  "/api/chat": { handler: chat, limiter: "CHAT_LIMITER" },
+  "/api/tts": { handler: tts, limiter: "TTS_LIMITER" },
+};
 
 async function route(request, env) {
-  const handler = ROUTES[new URL(request.url).pathname];
-  if (!handler) return json({ error: "not_found" }, 404);
+  const route = ROUTES[new URL(request.url).pathname];
+  if (!route) return json({ error: "not_found" }, 404);
   if (request.method === "OPTIONS") return new Response(null, { status: 204 });
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-  return handler(request, env);
+
+  // Ücretsiz kotayı tek bir kişinin bitirmemesi için IP başına dakikalık sınır.
+  const limiter = env[route.limiter];
+  if (limiter) {
+    const ip = request.headers.get("cf-connecting-ip") ?? "local";
+    const { success } = await limiter.limit({ key: ip });
+    if (!success) return json({ error: "too_many" }, 429);
+  }
+  return route.handler(request, env);
 }
 
 export default {

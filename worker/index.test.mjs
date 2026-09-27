@@ -41,6 +41,32 @@ test("başarılı cevap, uzun reply 2 cümleye kısaltılır", async () => {
   assert.equal(body.generationConfig.thinkingConfig.thinkingLevel, "minimal");
 });
 
+test("kelime, emoji ve tekrar notu", async () => {
+  const calls = mockGemini(200, geminiText({ reply: "Here is your menu.", correction: "", tip: "", word: "menu", wordTr: "menü", emoji: "📋" }));
+  const res = await worker.fetch(post({ message: "hi", review: ["I went to school.", "", "She likes tea.", "x", "y"] }), { GEMINI_API_KEY: "k" });
+  const data = await res.json();
+  assert.deepEqual([data.word, data.wordTr, data.emoji], ["menu", "menü", "📋"]);
+  const prompt = calls[0].body.systemInstruction.parts[0].text;
+  assert.match(prompt, /- I went to school\.\n- She likes tea\./);
+  assert.doesNotMatch(prompt, /- y/);
+
+  mockGemini(200, geminiText({ reply: "Hi.", correction: "", tip: "", word: "", wordTr: "boş", emoji: "not an emoji" }));
+  const bad = await (await worker.fetch(post({ message: "hi" }), { GEMINI_API_KEY: "k" })).json();
+  assert.deepEqual([bad.word, bad.wordTr, bad.emoji], ["", "", ""]);
+});
+
+test("IP başına sınır aşılınca too_many", async () => {
+  mockGemini(200, geminiText({ reply: "Hi.", correction: "", tip: "", word: "", wordTr: "", emoji: "" }));
+  const keys = [];
+  const env = { GEMINI_API_KEY: "k", CHAT_LIMITER: { limit: async ({ key }) => (keys.push(key), { success: keys.length < 2 }) } };
+  const req = () => new Request("http://x/api/chat", { method: "POST", headers: { "cf-connecting-ip": "1.2.3.4" }, body: "{}" });
+  assert.equal((await worker.fetch(req(), env)).status, 200);
+  const blocked = await worker.fetch(req(), env);
+  assert.equal(blocked.status, 429);
+  assert.equal((await blocked.json()).error, "too_many");
+  assert.deepEqual(keys, ["1.2.3.4", "1.2.3.4"]);
+});
+
 test("kısaltırken soru cümlesi korunur", async () => {
   mockGemini(200, geminiText({ reply: "Hello! Welcome to our lesson. I'm Ms. Emma. How are you today?", correction: "", tip: "" }));
   const res = await worker.fetch(post({ message: "" }), { GEMINI_API_KEY: "k" });

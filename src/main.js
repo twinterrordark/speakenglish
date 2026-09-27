@@ -5,8 +5,9 @@ import { speechSupported, watchEnglishVoices } from "./speech.js";
 import { say, stopVoice, unlockVoices } from "./voice.js";
 import { listen, listenSupported } from "./listen.js";
 import { Lesson, LEVELS, SCENARIOS } from "./lesson.js";
+import { notebook } from "./notebook.js";
+import { showNotebook, showReport } from "./sheets.js";
 
-const KEY_STORAGE = "msEmma.userKey";
 const touchDevice = window.matchMedia("(pointer: coarse)").matches;
 
 const $ = (id) => document.getElementById(id);
@@ -35,20 +36,30 @@ loadTeacher(`${import.meta.env.BASE_URL}models/teacher.glb`)
   });
 
 // ------------------------------------------------------------------ settings
-function storage(action, value) {
-  try {
-    if (action === "get") return localStorage.getItem(KEY_STORAGE) ?? "";
-    if (value) localStorage.setItem(KEY_STORAGE, value);
-    else localStorage.removeItem(KEY_STORAGE);
-  } catch {
-    return "";
-  }
-}
+const prefs = {
+  get(key) {
+    try {
+      return localStorage.getItem(`msEmma.${key}`) ?? "";
+    } catch {
+      return "";
+    }
+  },
+  set(key, value) {
+    try {
+      if (value) localStorage.setItem(`msEmma.${key}`, value);
+      else localStorage.removeItem(`msEmma.${key}`);
+    } catch {
+      // Depolama kapalıysa ayar sadece bu oturumda geçerli.
+    }
+  },
+};
 
 for (const [id, { label }] of Object.entries(SCENARIOS)) $("scenario").append(new Option(label, id));
 for (const level of LEVELS) $("level").append(new Option(level, level));
-$("user-key").value = storage("get");
-$("user-key").addEventListener("change", (e) => storage("set", e.target.value.trim()));
+$("user-key").value = prefs.get("userKey");
+$("user-key").addEventListener("change", (e) => prefs.set("userKey", e.target.value.trim()));
+$("hands-free").checked = prefs.get("handsFree") === "1";
+$("hands-free").addEventListener("change", (e) => prefs.set("handsFree", e.target.checked ? "1" : ""));
 
 // Ses seçimi: "natural" = sunucudaki doğal ses; sayılar tarayıcının İngilizce sesleri.
 // Doğal ses kullanılamazsa fallbackVoice ile tarayıcı sesine geçilir.
@@ -70,10 +81,52 @@ watchEnglishVoices((list) => {
   select.value = kept >= 0 ? String(kept) : "natural";
 });
 
+// ------------------------------------------------------------------ speaking
+function voiceOptions() {
+  const choice = $("voice").value;
+  return {
+    natural: choice === "natural",
+    browserVoice: voices[Number(choice)] ?? fallbackVoice,
+    rate: Number($("rate").value),
+  };
+}
+
+function teacherSays(text) {
+  return new Promise((resolve) => {
+    stage.board.setText(text);
+    say(text, {
+      ...voiceOptions(),
+      onStart: (level) => teacher?.startTalking(level),
+      onWord: (index, word) => {
+        teacher?.speakWord(word);
+        stage.board.highlightWord(index);
+      },
+      onEnd: () => {
+        teacher?.stopTalking();
+        stage.board.highlightWord(-1);
+        resolve();
+      },
+    });
+  });
+}
+
+/** Defter ve rapordaki 🔊 düğmeleri. */
+function pronounce(word) {
+  unlockVoices();
+  say(word, {
+    ...voiceOptions(),
+    onStart: (level) => teacher?.startTalking(level),
+    onEnd: () => teacher?.stopTalking(),
+  });
+}
+
 // ------------------------------------------------------------------ lesson flow
 const lesson = new Lesson({ getUserKey: () => $("user-key").value.trim() });
+let lessonId = 0; // Ders bitince ya da yeniden başlayınca eski isteklerin sonuçları yok sayılır.
 let busy = false;
 let started = false;
+let session = null;
+let recording = null;
 
 function setStatus(text, isError = false) {
   $("status").textContent = text;
@@ -85,7 +138,6 @@ function setBusy(value) {
   $("btn-send").disabled = value || !started;
   $("sentence").disabled = value || !started;
   $("btn-mic").disabled = value || !started || !listenSupported;
-  $("btn-start").disabled = value;
 }
 
 function addTurn(role, text, correction, tip) {
@@ -106,65 +158,90 @@ function addTurn(role, text, correction, tip) {
   list.scrollTop = list.scrollHeight;
 }
 
-function teacherSays(text) {
-  return new Promise((resolve) => {
-    stage.board.setText(text);
-    const choice = $("voice").value;
-    say(text, {
-      natural: choice === "natural",
-      browserVoice: voices[Number(choice)] ?? fallbackVoice,
-      rate: Number($("rate").value),
-      onStart: (level) => teacher?.startTalking(level),
-      onWord: (index, word) => {
-        teacher?.speakWord(word);
-        stage.board.highlightWord(index);
-      },
-      onEnd: () => {
-        teacher?.stopTalking();
-        stage.board.highlightWord(-1);
-        resolve();
-      },
-    });
-  });
+/** Ders raporu ve kelime defteri için bu turu kaydeder. */
+function record(message, { correction, tip, word, wordTr, emoji }) {
+  if (message) {
+    session.turns++;
+    if (correction) {
+      const mistake = { wrong: message, right: correction, tip };
+      session.corrections.push(mistake);
+      notebook.addMistake(mistake);
+    }
+  }
+  if (word) {
+    const entry = { word, tr: wordTr, emoji };
+    if (!session.words.some((w) => w.word.toLowerCase() === word.toLowerCase())) session.words.push(entry);
+    notebook.addWord(entry);
+  }
 }
 
 async function exchange(message) {
+  const id = lessonId;
   setBusy(true);
   setStatus("Ms. Emma düşünüyor…");
+  let listenAfter = false;
   try {
-    const { reply, correction, tip } = await lesson.send(message);
+    const result = await lesson.send(message);
+    if (id !== lessonId) return;
+    const { reply, correction, tip, word, wordTr, emoji } = result;
     setStatus("");
+    record(message, result);
     if (message) {
       addTurn("user", message, correction, tip);
       stage.board.setCorrection(correction, tip);
       if (!correction) teacher?.nod();
     }
+    stage.board.setPicture({ emoji, word, tr: wordTr });
     addTurn("model", reply);
     await teacherSays(reply);
+    listenAfter = id === lessonId && $("hands-free").checked;
   } catch (err) {
+    if (id !== lessonId) return;
     setStatus(err.message, true);
     if (message) $("sentence").value = message;
   } finally {
-    setBusy(false);
-    // Telefonda klavye açılıp sahneyi kapatmasın.
-    if (started && !touchDevice) $("sentence").focus();
+    if (id === lessonId) {
+      setBusy(false);
+      if (listenAfter) startListening({ auto: true });
+      // Telefonda klavye açılıp sahneyi kapatmasın.
+      else if (started && !touchDevice) $("sentence").focus();
+    }
   }
 }
 
-$("btn-start").addEventListener("click", () => {
-  if (busy) return;
+function startLesson() {
   unlockVoices();
   stopVoice();
-  lesson.reset({ scenario: $("scenario").value, level: $("level").value });
+  lessonId++;
+  lesson.reset({ scenario: $("scenario").value, level: $("level").value, review: notebook.reviewItems() });
+  session = { turns: 0, corrections: [], words: [] };
   started = true;
   $("transcript").replaceChildren();
   $("sentence").placeholder = listenSupported ? "🎤 konuş ya da yaz…" : "İngilizce yaz…";
-  $("btn-start").textContent = "↻ Baştan";
+  $("btn-start").textContent = "🏁 Bitir";
   stage.board.setTitle(SCENARIOS[lesson.scenario].title);
   stage.board.setCorrection("", "");
+  stage.board.setPicture();
   teacher?.wave();
   exchange("");
-});
+}
+
+function finishLesson() {
+  lessonId++;
+  stopVoice();
+  recording?.stop();
+  started = false;
+  setBusy(false);
+  setStatus("");
+  $("sentence").value = "";
+  $("sentence").placeholder = "Önce derse başla…";
+  $("btn-start").textContent = "▶ Başla";
+  teacher?.wave();
+  showReport(session, { onSpeak: pronounce, onNotebook: () => showNotebook({ onSpeak: pronounce }) });
+}
+
+$("btn-start").addEventListener("click", () => (started ? finishLesson() : startLesson()));
+$("btn-notebook").addEventListener("click", () => showNotebook({ onSpeak: pronounce }));
 
 $("say-form").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -177,21 +254,18 @@ $("say-form").addEventListener("submit", (e) => {
 });
 
 // ------------------------------------------------------------------ microphone
-let recording = null;
 if (!listenSupported) {
   $("btn-mic").title = "Bu tarayıcı konuşma tanımayı desteklemiyor (Chrome veya Edge deneyin)";
 }
 setBusy(false);
 
-$("btn-mic").addEventListener("click", () => {
-  if (recording) {
-    recording.stop();
-    return;
-  }
-  unlockVoices();
+/** auto: eller serbest modda öğretmen susunca kendiliğinden açılan dinleme. */
+function startListening({ auto = false } = {}) {
+  if (recording || !started || !listenSupported) return;
+  if (!auto) unlockVoices();
   stopVoice();
   $("btn-mic").classList.add("on");
-  setStatus("Dinliyorum… İngilizce konuş.");
+  setStatus(auto ? "🎧 Dinliyorum… Cevabını İngilizce söyle." : "Dinliyorum… İngilizce konuş.");
   recording = listen({
     onInterim: (text) => ($("sentence").value = text),
     onFinal: (text) => {
@@ -199,19 +273,28 @@ $("btn-mic").addEventListener("click", () => {
       exchange(text);
     },
     onError: (code) => {
+      if (code === "aborted") return;
       const messages = {
-        "not-allowed": "Mikrofon izni verilmedi.",
-        "no-speech": "Ses duyamadım, tekrar dene.",
+        "not-allowed": auto
+          ? "Tarayıcı mikrofonu kendiliğinden açmaya izin vermedi. 🎤'ye basarak konuş."
+          : "Mikrofon izni verilmedi.",
+        // Eller serbest modda sessizlikte döngüye girmeyiz; kullanıcı 🎤 ile devam eder.
+        "no-speech": auto ? "Seni duyamadım. Hazır olunca 🎤'ye bas." : "Ses duyamadım, tekrar dene.",
         network: "Konuşma tanıma için internet gerekiyor.",
       };
-      setStatus(messages[code] ?? "Mikrofon hatası: " + code, true);
+      setStatus(messages[code] ?? "Mikrofon hatası: " + code, code !== "no-speech");
     },
     onEnd: () => {
       recording = null;
       $("btn-mic").classList.remove("on");
-      if ($("status").textContent.startsWith("Dinliyorum")) setStatus("");
+      if (/Dinliyorum/.test($("status").textContent)) setStatus("");
     },
   });
+}
+
+$("btn-mic").addEventListener("click", () => {
+  if (recording) recording.stop();
+  else startListening();
 });
 
 // ------------------------------------------------------------------ history toggle

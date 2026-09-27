@@ -32,6 +32,7 @@
           <select id="level" aria-label="Seviye"></select>
         </label>
         <button id="btn-start" type="button" class="primary">▶ Başla</button>
+        <button id="btn-notebook" type="button" class="icon-btn" title="Kelime defteri" aria-label="Kelime defteri">📒</button>
         <details class="more">
           <summary aria-label="Ayarlar">⚙<span class="label-text"> Ayarlar</span></summary>
           <div class="more-body">
@@ -45,6 +46,10 @@
                 <option value="0.8">Yavaş</option>
                 <option value="1" selected>Normal</option>
               </select>
+            </label>
+            <label class="toggle">
+              <input id="hands-free" type="checkbox" />
+              <span>🎧 Eller serbest: Ms. Emma susunca mikrofon kendiliğinden açılsın</span>
             </label>
             <label class="field key">
               🔑 Kendi Gemini anahtarın (isteğe bağlı)
@@ -71,6 +76,14 @@
         <button id="btn-history" type="button" class="history" aria-pressed="false" title="Konuşma geçmişi" aria-label="Konuşma geçmişini göster">💬</button>
       </form>
     </section>
+
+    <dialog id="sheet" class="sheet">
+      <form method="dialog" class="sheet-head">
+        <h2 id="sheet-title"></h2>
+        <button class="icon-btn" aria-label="Kapat">✕</button>
+      </form>
+      <div id="sheet-body" class="sheet-body"></div>
+    </dialog>
 
     <script type="module" src="/src/main.js"></script>
   </body>

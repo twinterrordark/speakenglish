@@ -290,6 +290,134 @@ button.primary:hover { background: #288680; }
   border-color: var(--accent);
 }
 
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 17px;
+  flex: none;
+}
+
+.icon-btn.small {
+  width: 32px;
+  height: 32px;
+  font-size: 14px;
+}
+
+.toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1 1 100%;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+/* ---------------------------------------------------------------- rapor / defter */
+.sheet {
+  width: min(520px, calc(100% - 24px));
+  max-height: min(80vh, 720px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fffcf6;
+  color: var(--ink);
+  box-shadow: 0 20px 60px rgba(60, 40, 20, 0.25);
+  overflow: hidden;
+}
+
+.sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet::backdrop {
+  background: rgba(40, 30, 20, 0.35);
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sheet-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.sheet-body {
+  padding: 8px 16px 16px;
+  overflow-y: auto;
+}
+
+.sheet-body h3 {
+  margin: 16px 0 6px;
+  font-size: 14px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sheet-body p { margin: 8px 0; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+
+.score {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.score strong {
+  font-size: 40px;
+  color: var(--accent);
+}
+
+.sheet-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.word-row,
+.mistake-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.word-row .emoji { font-size: 20px; width: 26px; text-align: center; }
+.word-row .muted { flex: 1; min-width: 0; }
+.mistake-row > div { flex: 1; min-width: 0; font-size: 14px; }
+.mistake-row .wrong { color: #b3372f; text-decoration: line-through; text-decoration-thickness: 1px; }
+.mistake-row .right { color: #22763a; font-weight: 600; }
+
+.sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
 /* ---------------------------------------------------------------- telefon */
 @media (max-width: 600px) {
   .brand {
@@ -319,6 +447,8 @@ button.primary:hover { background: #288680; }
   .settings > .field select { width: 100%; max-width: none; padding: 8px 6px; }
   .settings > .field:nth-child(2) { flex: 0 0 64px; }
   #btn-start { flex: none; padding: 8px 12px; }
+  .settings .icon-btn { width: 36px; height: 36px; font-size: 16px; }
+  .sheet { width: 100%; max-width: none; max-height: 85vh; margin: auto 0 0; border-radius: 20px 20px 0 0; }
 
   .more { margin-left: 0; flex: none; }
   .more[open] { flex-basis: auto; }
