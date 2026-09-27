@@ -41,6 +41,12 @@ test("başarılı cevap, uzun reply 2 cümleye kısaltılır", async () => {
   assert.equal(body.generationConfig.thinkingConfig.thinkingLevel, "minimal");
 });
 
+test("kısaltırken soru cümlesi korunur", async () => {
+  mockGemini(200, geminiText({ reply: "Hello! Welcome to our lesson. I'm Ms. Emma. How are you today?", correction: "", tip: "" }));
+  const res = await worker.fetch(post({ message: "" }), { GEMINI_API_KEY: "k" });
+  assert.equal((await res.json()).reply, "Hello! How are you today?");
+});
+
 test("kullanıcı anahtarı sunucu anahtarından önceliklidir", async () => {
   const calls = mockGemini(200, geminiText({ reply: "Hello!", correction: "", tip: "" }));
   await worker.fetch(post({ message: "" }, { "x-user-key": "mine" }), { GEMINI_API_KEY: "site" });

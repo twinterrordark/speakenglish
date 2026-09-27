@@ -47,10 +47,19 @@ function clip(text, max) {
   return String(text ?? "").trim().slice(0, max);
 }
 
-/** Model uzun yazarsa yine de en fazla 2 cümle seslendirilsin. */
+/**
+ * Model uzun yazarsa yine de en fazla 2 cümle seslendirilsin.
+ * Sohbet sorularla ilerlediği için kesilen kısımdaki ilk soru korunur.
+ */
 function limitSentences(text, max = 2) {
-  const parts = text.match(/[^.!?]+[.!?]*/g) ?? [text];
-  return parts.slice(0, max).join("").trim();
+  const parts = (text.match(/[^.!?]+[.!?]*/g) ?? [text]).map((p) => p.trim()).filter(Boolean);
+  if (parts.length <= max) return parts.join(" ");
+  const kept = parts.slice(0, max);
+  if (!kept.some((p) => p.endsWith("?"))) {
+    const question = parts.slice(max).find((p) => p.endsWith("?"));
+    if (question) kept[max - 1] = question;
+  }
+  return kept.join(" ");
 }
 
 function parseBody(body) {
