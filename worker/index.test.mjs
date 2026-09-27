@@ -68,6 +68,16 @@ test("Gemini 429 → rate_limited", async () => {
   assert.equal((await res.json()).error, "rate_limited");
 });
 
+test("CORS sadece izinli siteye açılır", async () => {
+  const env = { ALLOWED_ORIGINS: "https://a.github.io" };
+  const pre = new Request("http://x/api/chat", { method: "OPTIONS", headers: { origin: "https://a.github.io" } });
+  const ok = await worker.fetch(pre, env);
+  assert.equal(ok.status, 204);
+  assert.equal(ok.headers.get("access-control-allow-origin"), "https://a.github.io");
+  const bad = await worker.fetch(new Request("http://x/api/chat", { method: "OPTIONS", headers: { origin: "https://evil.com" } }), env);
+  assert.equal(bad.headers.get("access-control-allow-origin"), null);
+});
+
 test("JSON olmayan model cevabı düz metin olarak kullanılır", async () => {
   mockGemini(200, { candidates: [{ content: { parts: [{ text: "Hello there!" }] } }] });
   const res = await worker.fetch(post({ message: "hi" }), { GEMINI_API_KEY: "k" });

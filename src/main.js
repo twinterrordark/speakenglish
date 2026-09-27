@@ -19,7 +19,7 @@ stage.renderer.setAnimationLoop(() => {
   stage.renderer.render(stage.scene, stage.camera);
 });
 
-loadTeacher("/models/teacher.glb")
+loadTeacher(`${import.meta.env.BASE_URL}models/teacher.glb`)
   .then((t) => {
     teacher = t;
     t.root.position.copy(stage.teacherPosition);

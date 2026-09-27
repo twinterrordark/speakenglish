@@ -9,7 +9,11 @@ export const SCENARIOS = {
 
 export const LEVELS = ["A2", "B1", "B2"];
 
+// Site ve sunucu farklı yerlerdeyse (ör. GitHub Pages + Cloudflare) sunucu adresi derlemede verilir.
+const API_URL = `${(import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "")}/api/chat`;
+
 const ERRORS = {
+  no_server: "Sohbet sunucusu bulunamadı. Cloudflare Worker adresi (API_URL) ayarlanmamış.",
   no_key: "Gemini API anahtarı yok. .dev.vars dosyasına ya da 🔑 alanına anahtar ekleyin.",
   bad_key: "API anahtarı geçersiz görünüyor. 🔑 alanını kontrol edin.",
   rate_limited: "Ücretsiz kullanım limiti doldu. Bir dakika bekleyip tekrar deneyin.",
@@ -39,7 +43,7 @@ export class Lesson {
 
     let res;
     try {
-      res = await fetch("/api/chat", {
+      res = await fetch(API_URL, {
         method: "POST",
         headers,
         body: JSON.stringify({ scenario: this.scenario, level: this.level, history: this.history, message }),
@@ -47,7 +51,7 @@ export class Lesson {
     } catch {
       throw new LessonError("Sunucuya ulaşılamadı. İnternet bağlantınızı kontrol edin.");
     }
-    const data = await res.json().catch(() => ({}));
+    const data = await res.json().catch(() => ({ error: res.status === 404 || res.status === 405 ? "no_server" : "" }));
     if (!res.ok) throw new LessonError(ERRORS[data.error] ?? "Bir sorun oldu, tekrar deneyin.");
 
     if (message) this.history.push({ role: "user", text: message });

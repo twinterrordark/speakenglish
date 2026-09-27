@@ -124,13 +124,34 @@ async function chat(request, env) {
   return json({ reply, correction: clip(out.correction, 400), tip: clip(out.tip, 200) });
 }
 
+/** Sadece ALLOWED_ORIGINS listesindeki siteler (ör. GitHub Pages) tarayıcıdan çağırabilir. */
+function corsHeaders(request, env) {
+  const origin = request.headers.get("origin");
+  const allowed = (env.ALLOWED_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!origin || !allowed.includes(origin)) return {};
+  return {
+    "access-control-allow-origin": origin,
+    "access-control-allow-methods": "POST, OPTIONS",
+    "access-control-allow-headers": "content-type, x-user-key",
+    "access-control-max-age": "86400",
+    vary: "Origin",
+  };
+}
+
+async function route(request, env) {
+  const url = new URL(request.url);
+  if (url.pathname === "/api/chat") {
+    if (request.method === "OPTIONS") return new Response(null, { status: 204 });
+    if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+    return chat(request, env);
+  }
+  return json({ error: "not_found" }, 404);
+}
+
 export default {
   async fetch(request, env) {
-    const url = new URL(request.url);
-    if (url.pathname === "/api/chat") {
-      if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-      return chat(request, env);
-    }
-    return json({ error: "not_found" }, 404);
+    const res = await route(request, env);
+    for (const [k, v] of Object.entries(corsHeaders(request, env))) res.headers.set(k, v);
+    return res;
   },
 };
